@@ -83,19 +83,19 @@ class TrieSearcher:
         best_transitions = \
             self.__get_best_transitions(all_transitions, self.__max_transitions, prev_action)
         for cur_transition in best_transitions:
-            if type(cur_transition) == Match:
+            if type(cur_transition) is Match:
                 result += self.__search(
-                    word_index + 1, cur_node.children[cur_transition.leter],
+                    word_index + 1, cur_node.children[cur_transition.letter],
                     cur_candidate + cur_transition.letter,
                     changes_made, cur_transition
                 )
-            elif type(cur_transition) == Replacement:
+            elif type(cur_transition) is Replacement:
                 result += self.__search(
                     word_index + 1, cur_node.children[cur_transition.letter_to],
                     cur_candidate + cur_transition.letter_to,
                     changes_made + 1, cur_transition
                 )
-            elif type(cur_transition) == Removal:
+            elif type(cur_transition) is Removal:
                 result += self.__search(
                     word_index + 1, cur_node, cur_candidate, changes_made + 1, cur_transition
                 )
