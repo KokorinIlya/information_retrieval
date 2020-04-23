@@ -47,15 +47,6 @@ def __fill_frequencies(train_data):
     return action_types_frequency, actions_frequency, context_actions_frequency
 
 
-def __get_words_stat(words):
-    words_frequency = {}
-    for cur_row in words.itertuples():
-        cur_word = cur_row.Id
-        cur_freq = cur_row.Freq
-        words_frequency[cur_word] = cur_freq
-    return words_frequency
-
-
 def __get_prediction(cur_word, trie, estimator, words_frequency, absolute_threshold, rel_threshold):
     if len(cur_word) < 50 and __is_russian(cur_word):
         searcher = TrieSearcher(trie, cur_word, 1, 10, estimator, True, False, False)
@@ -79,9 +70,10 @@ def main():
 
     train_data = __get_train_data('data/train.csv')
     action_types_frequency, actions_frequency, context_actions_frequency = __fill_frequencies(train_data)
-    estimator = ErrorEstimator(action_types_frequency, actions_frequency, context_actions_frequency, 0., 1., 0.)
+    estimator = ErrorEstimator(action_types_frequency, actions_frequency, context_actions_frequency,
+                               0., 1., 0.)
 
-    words_frequency = __get_words_stat(russian_words)
+    words_frequency = {cur_row.Id: cur_row.Freq for cur_row in russian_words.itertuples()}
 
     data_to_predict = pandas.read_csv('data/no_fix.submission.csv',
                                       dtype={'Id': str, 'Predicted': str}, keep_default_na=False).Id

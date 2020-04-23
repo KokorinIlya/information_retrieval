@@ -54,10 +54,6 @@ class TrieSearcher:
                     result.append(Match(cur_letter))
                 elif can_change and self.__can_replace:
                     result.append(Replacement(cur_letter, edge_letter))
-                if can_change and self.__can_delete:
-                    result.append(Removal(cur_letter))
-                if can_change and self.__can_insert:
-                    result.append(Insertion(edge_letter))
             if can_change and self.__can_delete:
                 result.append(Removal(cur_letter))
         if can_change and self.__can_insert:
