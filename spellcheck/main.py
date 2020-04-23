@@ -80,7 +80,7 @@ def main():
     with open('data/answer.csv', 'w') as file:
         file.write('Id,Predicted\n')
         for cur_word in data_to_predict:
-            answer = __get_prediction(cur_word, trie, estimator, words_frequency, 20, 2.5)
+            answer = __get_prediction(cur_word, trie, estimator, words_frequency, 200, 3.)
             file.write('{0},{1}\n'.format(cur_word, answer))
 
 

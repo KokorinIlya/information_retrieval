@@ -38,7 +38,7 @@ class TrieSearcher:
         self.__estimator = estimator
         if len(word) <= 4:
             self.__ending_size = 1
-        elif len(word) <= 6:
+        elif len(word) <= 7:
             self.__ending_size = 2
         else:
             self.__ending_size = 3
@@ -61,14 +61,6 @@ class TrieSearcher:
                 result.append(Insertion(edge_letter))
         return result
 
-    def __get_best_transitions(self, actions, count_to_take, prev_action):
-        return sorted(actions,
-                      key=lambda cur_action: self.__estimator.estimate_editorial_action(
-                          cur_action, prev_action
-                      ),
-                      reverse=True)[:count_to_take]
-
-    # TODO: make cur_candidate persistent stack
     def __search(self, word_index, cur_node, cur_candidate, changes_made, prev_action):
         if word_index == len(self.__word) and cur_node.is_terminal:
             result = [cur_candidate]
@@ -76,8 +68,12 @@ class TrieSearcher:
             result = []
         all_transitions = \
             self.__get_transitions_from_node(word_index, cur_node, changes_made)
-        best_transitions = \
-            self.__get_best_transitions(all_transitions, self.__max_transitions, prev_action)
+        best_transitions = sorted(all_transitions,
+                                  key=lambda cur_action: self.__estimator.estimate_editorial_action(
+                                      cur_action, prev_action
+                                  ),
+                                  reverse=True)[:self.__max_transitions]
+
         for cur_transition in best_transitions:
             if type(cur_transition) is Match:
                 result += self.__search(
