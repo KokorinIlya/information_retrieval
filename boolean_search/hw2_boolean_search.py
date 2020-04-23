@@ -1,82 +1,62 @@
-import argparse
-import codecs
 from abc import abstractmethod
+from argparse import ArgumentParser
+from array import array
+from bisect import bisect_left
+from codecs import open as codecs_open
+from zlib import crc32
+
+HASH_TABLE_SIZE = 100000
+
+
+def hash_string(string, mod):
+    return crc32(bytes(string, "utf-8")) % mod
 
 
 class Index:
-    def __init__(self, docs_file):
-        self.reverse_index = {}
-        with open(docs_file, 'r') as file:
-            for cur_line in file.readlines():
-                parts = cur_line.split()
-                doc_id = int(parts[0])
-                words = parts[1:]
-                for cur_word in words:
-                    if cur_word not in self.reverse_index:
-                        self.reverse_index[cur_word] = set()
-                    self.reverse_index[cur_word].add(doc_id)
+    def __build_index(self, docs_file):
+        index = [array('H', []) for _ in range(self.__index_size)]
+        with open(docs_file, mode="r") as file:
+            for cur_line in file:
+                line_parts = cur_line.split()
+                doc_id = int(line_parts[0])
+                words = line_parts[1:]
+                for word in set(words):
+                    word_hash = hash_string(word, self.__index_size)
+                    assert len(index[word_hash]) == 0 or doc_id >= index[word_hash][-1]
+                    if len(index[word_hash]) == 0 or doc_id > index[word_hash][-1]:
+                        index[word_hash].append(doc_id)
+        return index
 
+    def __init__(self, docs_file, index_size):
+        self.__index_size = index_size
+        self.__reverse_index = self.__build_index(docs_file)
 
-class TreeElement:
-    @abstractmethod
-    def to_string(self):
-        raise NotImplementedError("abstract to_string")
-
-    @abstractmethod
-    def get_documents(self, reverse_index):
-        raise NotImplementedError("abstract get_documents")
-
-
-class TreeLeaf:
-    def __init__(self, word):
-        self.word = word
-
-    def to_string(self):
-        return self.word
-
-    def get_documents(self, reverse_index):
-        return reverse_index.get(self.word, set())
-
-
-class TreeNode:
-    def __init__(self, op, left, right):
-        self.op = op
-        self.left = left
-        self.right = right
-
-    def to_string(self):
-        return "(" + self.op + " " + self.left.to_string() + " " + self.right.to_string() + ")"
-
-    def get_documents(self, reverse_index):
-        left_set = self.left.get_documents(reverse_index)
-        right_set = self.right.get_documents(reverse_index)
-        if self.op == '|':
-            return left_set | right_set
-        else:
-            return left_set & right_set
+    def get_docs_by_word(self, word):
+        word_hash = hash_string(word, self.__index_size)
+        return self.__reverse_index[word_hash]
 
 
 class Parser:
-    def __init__(self, _line):
-        self.line = _line + '$'
-        self.pos = 0
+    def __init__(self, line):
+        self.__line = line + '$'
+        self.__pos = 0
 
     def __skip(self, s):
-        if self.line.startswith(s, self.pos):
-            self.pos += len(s)
+        if self.__line.startswith(s, self.__pos):
+            self.__pos += len(s)
             return True
         return False
 
     def __parse_disjunction(self):
         x = self.__parse_conjunction()
         while self.__skip('|'):
-            x = TreeNode('|', x, self.__parse_conjunction())
+            x = OrNode(x, self.__parse_conjunction())
         return x
 
     def __parse_conjunction(self):
         x = self.__parse_atom()
         while self.__skip(' '):
-            x = TreeNode('&', x, self.__parse_atom())
+            x = AndNode(x, self.__parse_atom())
         return x
 
     def __parse_atom(self):
@@ -85,45 +65,124 @@ class Parser:
             self.__skip(')')
             return x
         x = ''
-        while self.line[self.pos].isdigit() or self.line[self.pos].isalpha():
-            x += self.line[self.pos]
-            self.pos += 1
+        while self.__line[self.__pos].isdigit() or self.__line[self.__pos].isalpha():
+            x += self.__line[self.__pos]
+            self.__pos += 1
         return TreeLeaf(x)
 
     def parse(self):
         return self.__parse_disjunction()
 
 
+class TreeElement:
+    @abstractmethod
+    def get_documents(self, index):
+        raise NotImplementedError("abstract get_documents")
+
+
+class TreeLeaf(TreeElement):
+    def __init__(self, word):
+        self.word = word
+
+    def get_documents(self, index):
+        return index.get_docs_by_word(self.word)
+
+
+class TreeNode:
+    def __init__(self, left, right):
+        self.__left = left
+        self.__right = right
+
+    @abstractmethod
+    def _process_children_results(self, left_result, right_result):
+        raise NotImplementedError("abstract _process_children_results")
+
+    def get_documents(self, index):
+        left_res = self.__left.get_documents(index)
+        right_res = self.__right.get_documents(index)
+        return self._process_children_results(left_res, right_res)
+
+
+class AndNode(TreeNode):
+    def _process_children_results(self, left_result, right_result):
+        result = array('H', [])
+        left_index = 0
+        right_index = 0
+        while left_index < len(left_result) and right_index < len(right_result):
+            left_elem = left_result[left_index]
+            right_elem = right_result[right_index]
+            if left_elem < right_elem:
+                left_index += 1
+            elif left_elem > right_elem:
+                right_index += 1
+            else:
+                result.append(left_elem)
+                left_index += 1
+                right_index += 1
+        return result
+
+    def __init__(self, left, right):
+        super().__init__(left, right)
+
+
+class OrNode(TreeNode):
+    def _process_children_results(self, left_result, right_result):
+        result = array('H', [])
+        left_index = 0
+        right_index = 0
+        while (left_index < len(left_result)) and (right_index < len(right_result)):
+            left_elem = left_result[left_index]
+            right_elem = right_result[right_index]
+            if left_elem < right_elem:
+                result.append(left_elem)
+                left_index += 1
+            elif left_elem > right_elem:
+                result.append(right_elem)
+                right_index += 1
+            else:
+                result.append(left_elem)
+                left_index += 1
+                right_index += 1
+        result += left_result[left_index:]
+        result += right_result[right_index:]
+        return result
+
+    def __init__(self, left, right):
+        super().__init__(left, right)
+
+
 class QueryTree:
     def __init__(self, qid, query):
-        self.qid = qid
-        self.tree = Parser(query).parse()
+        self.__qid = qid
+        self.__tree = Parser(query).parse()
 
     def search(self, index):
-        return self.qid, self.tree.get_documents(index.reverse_index)
+        return self.__qid, self.__tree.get_documents(index)
 
 
 def get_objects(objects_file):
     with open(objects_file, 'r') as file:
         file.readline()
-        for cur_line in file.readlines():
+        for cur_line in file:
             object_id, query_id, document_id = cur_line.split(',')
             yield object_id, int(query_id), int(document_id)
 
 
 class SearchResults:
     def __init__(self):
-        self.result = {}
+        self.__results = {}
 
     def add(self, found):
         qid, docs = found
-        self.result[qid] = docs
+        self.__results[qid] = docs
 
     def print_submission(self, objects_file, submission_file):
-        with open(submission_file, 'w') as file:
+        with open(submission_file, mode="w") as file:
             file.write("ObjectId,Relevance\n")
             for object_id, query_id, document_id in get_objects(objects_file):
-                if document_id in self.result[query_id]:
+                query_result = self.__results[query_id]
+                possible_doc_index = bisect_left(query_result, document_id)
+                if possible_doc_index < len(query_result) and query_result[possible_doc_index] == document_id:
                     file.write(object_id + ",1\n")
                 else:
                     file.write(object_id + ",0\n")
@@ -131,23 +190,23 @@ class SearchResults:
 
 def main():
     # Command line arguments.
-    parser = argparse.ArgumentParser(description='Homework 2: Boolean Search')
-    parser.add_argument('--queries_file', required=False, default='data/queries.numerate.txt')
-    parser.add_argument('--objects_file', required=False, default='data/objects.numerate.txt')
-    parser.add_argument('--docs_file', required=False, default='data/docs.tsv')
-    parser.add_argument('--submission_file', required=False, default='data/result.txt')
+    parser = ArgumentParser(description="Homework 2: Boolean Search")
+    parser.add_argument("--queries_file", required=True, help="queries.numerate.txt")
+    parser.add_argument("--objects_file", required=True, help="objects.numerate.txt")
+    parser.add_argument("--docs_file", required=True, help="docs.tsv")
+    parser.add_argument("--submission_file", required=True, help="output file with relevances")
     args = parser.parse_args()
 
     # Build index.
-    index = Index(args.docs_file)
+    index = Index(args.docs_file, HASH_TABLE_SIZE)
 
     # Process queries.
     search_results = SearchResults()
-    with codecs.open(args.queries_file, mode='r', encoding='utf-8') as queries_fh:
+    with codecs_open(args.queries_file, mode="r", encoding="utf-8") as queries_fh:
         for line in queries_fh:
-            fields = line.rstrip('\n').split('\t')
-            qid = int(fields[0])
-            query = fields[1]
+            line_parts = line.rstrip("\n").split("\t")
+            qid = int(line_parts[0])
+            query = line_parts[1]
 
             # Parse query.
             query_tree = QueryTree(qid, query)
