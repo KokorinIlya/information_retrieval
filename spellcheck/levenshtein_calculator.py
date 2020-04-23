@@ -15,8 +15,9 @@ def calc_distance(from_string, to_string):
     for i in range(1, n + 1):
         for j in range(1, m + 1):
             if from_string[i - 1] == to_string[j - 1]:
-                dp[i][j] = dp[i - 1][j - 1]
+                dp[i][j] = dp[i - 1][j - 1] # TODO
             else:
+                # TODO: replace cost, insertion cost, delete cost
                 dp[i][j] = min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + 1)
 
     result = dp[n][m]
